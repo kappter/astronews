@@ -79,19 +79,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     const data = await response.json();
+                    console.log(`API response for ${planet} at ${timeString}:`, data); // Log the response to inspect its structure
+
                     if (!data.data || !data.data.table || !data.data.table.rows) {
                         throw new Error('Invalid API response: Missing bodies data');
                     }
 
                     const planetData = data.data.table.rows.find(row => row.entry.name.toLowerCase() === planet);
                     if (planetData) {
+                        const position = planetData.cells[0]?.position || {};
+                        const distance = planetData.cells[0]?.distance || {};
+
                         positions[planet].push({
                             time: timeString,
-                            altitude: planetData.cells[0].position.horizonal.altitude.degrees,
-                            azimuth: planetData.cells[0].position.horizonal.azimuth.degrees,
-                            distance: planetData.cells[0].distance.from_earth.au,
-                            eclipticLongitude: planetData.cells[0].position.ecliptic.longitude.degrees
+                            altitude: position.horizonal?.altitude?.degrees || 0,
+                            azimuth: position.horizonal?.azimuth?.degrees || 0,
+                            distance: distance.fromEarth?.au || 0, // Updated to match actual response structure
+                            eclipticLongitude: position.ecliptic?.longitude?.degrees || 0
                         });
+                    } else {
+                        console.warn(`No data found for ${planet} at ${timeString}`);
                     }
 
                     // Add a small delay to avoid rate limiting
@@ -143,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             meridianTime = meridianTime !== 'N/A' ? `Fri ${meridianTime}` : 'N/A';
 
             // Calculate zodiac sign from ecliptic longitude
-            const eclipticLongitude = positions[0].eclipticLongitude;
+            const eclipticLongitude = positions[0]?.eclipticLongitude || 0;
             const sign = getZodiacSign(eclipticLongitude);
 
             // Estimate viewing conditions
