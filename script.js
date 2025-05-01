@@ -22,23 +22,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Function to fetch celestial data from timeanddate.com Astronomy API
+    // Function to fetch celestial data from AstronomyAPI
     async function fetchCelestialData(latitude, longitude) {
         try {
-            const accessKey = 'YOUR_ACCESS_KEY'; // Replace with your timeanddate.com API key
-            const expires = Math.floor(Date.now() / 1000) + 3600; // Timestamp for 1 hour from now
-            const signature = 'YOUR_SIGNATURE'; // Replace with your computed signature (requires API secret)
-            const date = new Date().toISOString().split('T')[0]; // Current date in YYYY-MM-DD format
+            const appId = '7d9f0bcb-9245-4e85-ad53-f943c713b81d';
+            const appSecret = 'baad874ee1e4300a1373910ba505fcdb84dfe4beb95499f92178b4f97ae605fa8b6e5591b908ad984e3ace78d3b4d017586b2b83016b1985abeaff98c008a9a54a60475cf171e05c6cd94f934965148d3c3c199ab2986da718ad190ed0a0861c64b37f15cc6f91a96c81f394bf7d3998';
+            const authString = btoa(`${appId}:${appSecret}`);
+            const date = new Date().toISOString().split('.')[0] + 'Z'; // Current UTC time in ISO format
 
-            // API request for celestial events (rise, set, meridian) for planets
-            const url = `https://api.xmltime.com/astronomy?object=mercury,venus,mars,jupiter,saturn,uranus,neptune&coords=${latitude},${longitude}&startdt=${date}&enddt=${date}&types=rise,set,meridian&version=3&out=json&accesskey=${accessKey}&expires=${expires}&signature=${signature}`;
+            const url = 'https://api.astronomyapi.com/api/v2/bodies/positions';
+            const params = {
+                latitude: latitude,
+                longitude: longitude,
+                elevation: 0, // Assuming sea level; adjust if needed
+                from_date: date.split('T')[0], // Current date
+                to_date: date.split('T')[0], // Same date
+                time: date.split('T')[1], // Current time
+            };
 
-            const response = await fetch(url);
+            const response = await fetch(`${url}?${new URLSearchParams(params)}`, {
+                headers: {
+                    'Authorization': `Basic ${authString}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
             if (!response.ok) {
-                throw new Error('API request failed');
+                const errorText = await response.text();
+                console.error('API response error:', response.status, errorText);
+                throw new Error(`API request failed with status ${response.status}: ${errorText}`);
             }
 
             const data = await response.json();
+            console.log('API response:', data); // Log the response to inspect its structure
+            if (!data.data || !data.data.table || !data.data.table.rows) {
+                throw new Error('Invalid API response: Missing bodies data');
+            }
+
             const celestialData = processApiData(data);
             displayCelestialData(celestialData);
         } catch (error) {
@@ -51,31 +71,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to process API data into the required format
     function processApiData(data) {
         const celestialData = [];
-        const location = data.locations[0];
-        const objects = location.astronomy.objects;
+        const bodies = data.data.table.rows;
 
-        objects.forEach(obj => {
-            const planetName = obj.name.charAt(0).toUpperCase() + obj.name.slice(1);
-            const days = obj.days[0]; // Data for the current date
-            const events = days.events;
+        bodies.forEach(body => {
+            const planetName = body.entry.name.charAt(0).toUpperCase() + body.entry.name.slice(1);
+            if (!['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'].includes(body.entry.name.toLowerCase())) {
+                return; // Skip non-planets
+            }
 
-            // Extract rise, set, and meridian times
-            const riseEvent = events.find(e => e.type === 'rise');
-            const setEvent = events.find(e => e.type === 'set');
-            const meridianEvent = events.find(e => e.type === 'meridian');
+            const position = body.cells[0].position.horizonal; // Current position
+            const distanceAU = (body.cells[0].distance.from_earth.au).toFixed(3);
 
-            // Format times
-            const riseTime = riseEvent ? `Fri ${formatTime(riseEvent.hour, riseEvent.min)}` : 'N/A';
-            const setTime = setEvent ? `Fri ${formatTime(setEvent.hour, setEvent.min)}` : 'N/A';
-            const meridianTime = meridianEvent ? `Fri ${formatTime(meridianEvent.hour, meridianEvent.min)}` : 'N/A';
+            // Approximate rise, set, and meridian using altitude
+            // Note: This is a simplification; ideally, we'd need to fetch positions over a 24-hour period
+            const altitude = position.altitude.degrees;
+            const azimuth = position.azimuth.degrees;
 
-            // Placeholder for sign and viewing conditions (not directly provided by API)
-            const sign = getSignForPlanet(planetName); // You'll need to implement this or use another API
-            const viewing = estimateViewingConditions(meridianEvent?.altitude); // Estimate based on altitude
+            // Placeholder for rise, set, and meridian (requires multiple API calls to calculate accurately)
+            const riseTime = 'N/A'; // Requires checking when altitude crosses 0
+            const setTime = 'N/A'; // Requires checking when altitude crosses 0
+            const meridianTime = azimuth > 170 && azimuth < 190 ? formatTime(new Date().getHours(), new Date().getMinutes()) : 'N/A'; // Approximate meridian when azimuth is near 180°
 
-            // Distance in AU (convert from km to AU, 1 AU = 149,597,870.7 km)
-            const distanceKm = meridianEvent?.distance || 0;
-            const distanceAU = (distanceKm / 149597870.7).toFixed(3);
+            const sign = getSignForPlanet(planetName);
+            const viewing = estimateViewingConditions(altitude);
 
             celestialData.push({
                 planet: planetName,
@@ -98,9 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${adjustedHour}:${minute.toString().padStart(2, '0')} ${period}`;
     }
 
-    // Placeholder function to determine zodiac sign (not provided by API)
+    // Placeholder function to determine zodiac sign
     function getSignForPlanet(planet) {
-        // This is a placeholder. You may need another API or calculation for accurate zodiac signs.
         const signs = {
             Mercury: 'Pisces',
             Venus: 'Pisces',
@@ -123,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'Extremely difficult to see';
     }
 
-    // Fallback data (from the image you provided)
+    // Fallback data
     function getFallbackData() {
         return [
             { planet: 'Mercury', rise: 'Fri 5:42 am', set: 'Fri 11:48 am', meridian: 'Fri 5:55 pm', sign: 'Pisces', viewing: 'Difficult to see', au: 1.004 },
