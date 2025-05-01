@@ -28,16 +28,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Function to fetch weather and Sun/Moon data
     async function fetchWeatherAndSunMoonData(latitude, longitude) {
+        let weatherData = {};
+        let sunMoonData = {};
+
+        // Fetch weather data (independent of Sun/Moon data)
         try {
-            const weatherData = await fetchWeatherData(latitude, longitude);
-            const sunMoonData = await fetchSunMoonData(latitude, longitude);
-            const combinedData = { ...weatherData, ...sunMoonData };
-            displayWeatherAndSunMoonData(combinedData);
+            weatherData = await fetchWeatherData(latitude, longitude);
         } catch (error) {
-            console.error('Error fetching weather and Sun/Moon data:', error);
-            locationInfo.textContent = 'Failed to fetch weather and Sun/Moon data. Using default data.';
-            displayWeatherAndSunMoonData({});
+            console.error('Error fetching weather data:', error);
+            locationInfo.textContent += ' Failed to fetch weather data.';
         }
+
+        // Fetch Sun/Moon data (independent of weather data)
+        try {
+            sunMoonData = await fetchSunMoonData(latitude, longitude);
+        } catch (error) {
+            console.error('Error fetching Sun/Moon data:', error);
+            locationInfo.textContent += ' Failed to fetch Sun/Moon data.';
+        }
+
+        const combinedData = { ...weatherData, ...sunMoonData };
+        displayWeatherAndSunMoonData(combinedData);
     }
 
     // Function to fetch weather data from OpenWeatherMap
