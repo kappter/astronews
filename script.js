@@ -30,12 +30,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const authString = btoa(`${appId}:${appSecret}`);
             const date = new Date();
             const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
-            const timeString = `${date.getUTCHours().toString().padStart(2, '0')}:${date.getUTCMinutes().toString().padStart(2, '0')}:${date.getUTCSeconds().toString().padStart(2, '0')}`; // HH:MM:SS
 
             // Fetch positions over a 24-hour period to calculate rise, set, and meridian
             const positionsData = await fetchPositionsOverDay(latitude, longitude, dateString, authString);
 
             const celestialData = processApiData(positionsData, dateString);
+            console.log('Processed celestial data:', celestialData); // Log the processed data
             displayCelestialData(celestialData);
         } catch (error) {
             console.error('Error fetching celestial data:', error);
@@ -49,22 +49,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = 'https://api.astronomyapi.com/api/v2/bodies/positions';
         const positions = {};
 
-        // Fetch data for each planet at 30-minute intervals over 24 hours
+        // Fetch data for each planet at hourly intervals over 24 hours
         const planets = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
         for (let planet of planets) {
             positions[planet] = [];
             for (let hour = 0; hour < 24; hour++) {
-                for (let minute of [0, 30]) {
-                    const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
-                    const params = {
-                        latitude: latitude,
-                        longitude: longitude,
-                        elevation: 0,
-                        from_date: dateString,
-                        to_date: dateString,
-                        time: timeString,
-                    };
+                const timeString = `${hour.toString().padStart(2, '0')}:00:00`;
+                const params = {
+                    latitude: latitude,
+                    longitude: longitude,
+                    elevation: 0,
+                    from_date: dateString,
+                    to_date: dateString,
+                    time: timeString,
+                };
 
+                try {
                     const response = await fetch(`${url}?${new URLSearchParams(params)}`, {
                         headers: {
                             'Authorization': `Basic ${authString}`,
@@ -74,15 +74,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (!response.ok) {
                         const errorText = await response.text();
-                        console.error('API response error:', response.status, errorText);
+                        console.error(`API response error for ${planet} at ${timeString}:`, response.status, errorText);
                         throw new Error(`API request failed with status ${response.status}: ${errorText}`);
                     }
 
                     const data = await response.json();
-                    console.log(`API response for ${planet} at ${timeString}:`, data); // Log the response to inspect its structure
+                    console.log(`API response for ${planet} at ${timeString}:`, data);
 
                     if (!data.data || !data.data.table || !data.data.table.rows) {
-                        throw new Error('Invalid API response: Missing bodies data');
+                        console.warn(`Invalid API response for ${planet} at ${timeString}: Missing bodies data`);
+                        continue;
                     }
 
                     const planetData = data.data.table.rows.find(row => row.entry.name.toLowerCase() === planet);
@@ -94,15 +95,19 @@ document.addEventListener('DOMContentLoaded', () => {
                             time: timeString,
                             altitude: position.horizonal?.altitude?.degrees || 0,
                             azimuth: position.horizonal?.azimuth?.degrees || 0,
-                            distance: distance.fromEarth?.au || 0, // Updated to match actual response structure
+                            distance: distance.fromEarth?.au || 0,
                             eclipticLongitude: position.ecliptic?.longitude?.degrees || 0
                         });
                     } else {
                         console.warn(`No data found for ${planet} at ${timeString}`);
                     }
 
-                    // Add a small delay to avoid rate limiting
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    // Add a delay to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                } catch (error) {
+                    console.error(`Error fetching data for ${planet} at ${timeString}:`, error);
+                    // Skip to the next iteration instead of failing entirely
+                    continue;
                 }
             }
         }
@@ -117,6 +122,11 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let planet in positionsData) {
             const planetName = planet.charAt(0).toUpperCase() + planet.slice(1);
             const positions = positionsData[planet];
+
+            if (!positions || positions.length === 0) {
+                console.warn(`No position data for ${planetName}`);
+                continue;
+            }
 
             // Calculate rise, set, and meridian times
             let riseTime = 'N/A', setTime = 'N/A', meridianTime = 'N/A';
@@ -157,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const viewing = estimateViewingConditions(meridianAltitude);
 
             // Distance in AU
-            const distanceAU = meridianDistance.toFixed(3);
+            const distanceAU = meridianDistance ? meridianDistance.toFixed(3) : 'N/A';
 
             celestialData.push({
                 planet: planetName,
@@ -224,16 +234,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to display data in the table
     function displayCelestialData(data) {
         celestialTable.innerHTML = '';
+        if (!data || data.length === 0) {
+            console.warn('No celestial data to display');
+            return;
+        }
+
         data.forEach(item => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td>${item.planet}</td>
-                <td>${item.rise}</td>
-                <td>${item.set}</td>
-                <td>${item.meridian}</td>
-                <td>${item.sign}</td>
-                <td>${item.viewing}</td>
-                <td>${item.au}</td>
+                <td>${item.planet || 'N/A'}</td>
+                <td>${item.rise || 'N/A'}</td>
+                <td>${item.set || 'N/A'}</td>
+                <td>${item.meridian || 'N/A'}</td>
+                <td>${item.sign || 'N/A'}</td>
+                <td>${item.viewing || 'N/A'}</td>
+                <td>${item.au || 'N/A'}</td>
             `;
             celestialTable.appendChild(row);
         });
