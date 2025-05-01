@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const locationInfo = document.getElementById('location-info');
     const celestialTable = document.getElementById('celestial-data');
+    const weatherSunMoonTable = document.getElementById('weather-sun-moon-data');
 
     // Function to fetch user's location
     function getUserLocation() {
@@ -9,17 +10,144 @@ document.addEventListener('DOMContentLoaded', () => {
                 (position) => {
                     const { latitude, longitude } = position.coords;
                     locationInfo.textContent = `Location: Lat ${latitude.toFixed(2)}, Lon ${longitude.toFixed(2)}`;
+                    fetchWeatherAndSunMoonData(latitude, longitude);
                     fetchCelestialData(latitude, longitude);
                 },
                 (error) => {
                     locationInfo.textContent = 'Unable to fetch location. Using default data.';
                     displayCelestialData(getFallbackData());
+                    displayWeatherAndSunMoonData({});
                 }
             );
         } else {
             locationInfo.textContent = 'Geolocation not supported. Using default data.';
             displayCelestialData(getFallbackData());
+            displayWeatherAndSunMoonData({});
         }
+    }
+
+    // Function to fetch weather and Sun/Moon data
+    async function fetchWeatherAndSunMoonData(latitude, longitude) {
+        try {
+            const weatherData = await fetchWeatherData(latitude, longitude);
+            const sunMoonData = await fetchSunMoonData(latitude, longitude);
+            const combinedData = { ...weatherData, ...sunMoonData };
+            displayWeatherAndSunMoonData(combinedData);
+        } catch (error) {
+            console.error('Error fetching weather and Sun/Moon data:', error);
+            locationInfo.textContent = 'Failed to fetch weather and Sun/Moon data. Using default data.';
+            displayWeatherAndSunMoonData({});
+        }
+    }
+
+    // Function to fetch weather data from OpenWeatherMap
+    async function fetchWeatherData(latitude, longitude) {
+        const apiKey = 'YOUR_OPENWEATHERMAP_API_KEY'; // Replace with your OpenWeatherMap API key
+        const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=imperial&appid=${apiKey}`;
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Weather API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return {
+            temperature: data.main.temp,
+            condition: data.weather[0].description,
+            humidity: data.main.humidity,
+            wind: `${data.wind.speed} mph ${degreesToDirection(data.wind.deg)}`
+        };
+    }
+
+    // Function to fetch Sun and Moon data from AstronomyAPI
+    async function fetchSunMoonData(latitude, longitude) {
+        const appId = '7d9f0bcb-9245-4e85-ad53-f943c713b81d';
+        const appSecret = 'baad874ee1e4300a1373910ba505fcdb84dfe4beb95499f92178b4f97ae605fa8b6e5591b908ad984e3ace78d3b4d017586b2b83016b1985abeaff98c008a9a54a60475cf171e05c6cd94f934965148d3c3c199ab2986da718ad190ed0a0861c64b37f15cc6f91a96c81f394bf7d3998';
+        const authString = btoa(`${appId}:${appSecret}`);
+        const date = new Date();
+        const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        // Fetch Sun and Moon positions over a 24-hour period
+        const positionsData = await fetchPositionsOverDay(latitude, longitude, dateString, authString, ['sun', 'moon']);
+
+        const sunData = positionsData['sun'] || [];
+        const moonData = positionsData['moon'] || [];
+
+        // Calculate Sun rise/set
+        let sunRise = 'N/A', sunSet = 'N/A', sunDistance = 0, sunAltitude = 0;
+        for (let i = 0; i < sunData.length; i++) {
+            const current = sunData[i];
+            const prev = i > 0 ? sunData[i - 1] : null;
+
+            if (prev && prev.altitude < 0 && current.altitude >= 0) {
+                sunRise = `Fri ${current.time}`;
+            }
+            if (prev && prev.altitude >= 0 && current.altitude < 0) {
+                sunSet = `Fri ${current.time}`;
+            }
+            if (Math.abs(current.azimuth - 180) < 5) {
+                sunDistance = current.distance;
+                sunAltitude = current.altitude;
+            }
+        }
+        sunDistance = (sunDistance * 92955807).toFixed(0); // Convert AU to miles
+
+        // Calculate Moon rise
+        let moonRise = 'N/A', moonDistance = 0;
+        for (let i = 0; i < moonData.length; i++) {
+            const current = moonData[i];
+            const prev = i > 0 ? moonData[i - 1] : null;
+
+            if (prev && prev.altitude < 0 && current.altitude >= 0) {
+                moonRise = `Fri ${current.time}`;
+            }
+            if (Math.abs(current.azimuth - 180) < 5) {
+                moonDistance = current.distance;
+            }
+        }
+        moonDistance = (moonDistance * 92955807).toFixed(0); // Convert AU to miles
+
+        // Fetch Moon phase
+        const moonPhaseData = await fetchMoonPhase(authString, dateString);
+        const moonPhase = moonPhaseData.phase ? `${moonPhaseData.phase} (${moonPhaseData.illumination}%)` : 'N/A';
+        const fullNewMoon = moonPhaseData.nextFull ? `Full: ${new Date(moonPhaseData.nextFull).toLocaleDateString()}` : 'N/A';
+
+        return {
+            sunRise,
+            sunSet,
+            sunDistance,
+            sunAltitude: sunAltitude.toFixed(2),
+            moonPhase,
+            moonRise,
+            moonDistance,
+            fullNewMoon
+        };
+    }
+
+    // Function to fetch Moon phase from AstronomyAPI
+    async function fetchMoonPhase(authString, dateString) {
+        const url = 'https://api.astronomyapi.com/api/v2/studio/moon-phase';
+        const params = {
+            date: dateString
+        };
+
+        const response = await fetch(`${url}?${new URLSearchParams(params)}`, {
+            headers: {
+                'Authorization': `Basic ${authString}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Moon phase API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return {
+            phase: data.data?.name || 'N/A',
+            illumination: data.data?.illumination ? (data.data.illumination * 100).toFixed(2) : 'N/A',
+            nextFull: data.data?.nextFullMoon?.date || null
+        };
     }
 
     // Function to fetch celestial data from AstronomyAPI
@@ -31,26 +159,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const date = new Date();
             const dateString = date.toISOString().split('T')[0]; // YYYY-MM-DD
 
-            // Fetch positions over a 24-hour period to calculate rise, set, and meridian
             const positionsData = await fetchPositionsOverDay(latitude, longitude, dateString, authString);
 
             const celestialData = processApiData(positionsData, dateString);
-            console.log('Processed celestial data:', celestialData); // Log the processed data
+            console.log('Processed celestial data:', celestialData);
             displayCelestialData(celestialData);
         } catch (error) {
             console.error('Error fetching celestial data:', error);
-            locationInfo.textContent = 'Failed to fetch data. Using default data.';
+            locationInfo.textContent = 'Failed to fetch celestial data. Using default data.';
             displayCelestialData(getFallbackData());
         }
     }
 
     // Function to fetch positions over a 24-hour period
-    async function fetchPositionsOverDay(latitude, longitude, dateString, authString) {
+    async function fetchPositionsOverDay(latitude, longitude, dateString, authString, planets = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']) {
         const url = 'https://api.astronomyapi.com/api/v2/bodies/positions';
         const positions = {};
 
-        // Fetch data for each planet at hourly intervals over 24 hours
-        const planets = ['mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
         for (let planet of planets) {
             positions[planet] = [];
             for (let hour = 0; hour < 24; hour++) {
@@ -102,11 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.warn(`No data found for ${planet} at ${timeString}`);
                     }
 
-                    // Add a delay to avoid rate limiting
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 } catch (error) {
                     console.error(`Error fetching data for ${planet} at ${timeString}:`, error);
-                    // Skip to the next iteration instead of failing entirely
                     continue;
                 }
             }
@@ -128,7 +251,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 continue;
             }
 
-            // Calculate rise, set, and meridian times
             let riseTime = 'N/A', setTime = 'N/A', meridianTime = 'N/A';
             let meridianAltitude = 0, meridianDistance = 0;
 
@@ -136,37 +258,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 const current = positions[i];
                 const prev = i > 0 ? positions[i - 1] : null;
 
-                // Rise: altitude crosses 0 going up
                 if (prev && prev.altitude < 0 && current.altitude >= 0) {
                     riseTime = current.time;
                 }
-
-                // Set: altitude crosses 0 going down
                 if (prev && prev.altitude >= 0 && current.altitude < 0) {
                     setTime = current.time;
                 }
-
-                // Meridian: azimuth closest to 180°
-                if (Math.abs(current.azimuth - 180) < 5) { // Within 5 degrees of meridian
+                if (Math.abs(current.azimuth - 180) < 5) {
                     meridianTime = current.time;
                     meridianAltitude = current.altitude;
                     meridianDistance = current.distance;
                 }
             }
 
-            // Format times with day (assuming current day for simplicity)
             riseTime = riseTime !== 'N/A' ? `Fri ${riseTime}` : 'N/A';
             setTime = setTime !== 'N/A' ? `Fri ${setTime}` : 'N/A';
             meridianTime = meridianTime !== 'N/A' ? `Fri ${meridianTime}` : 'N/A';
 
-            // Calculate zodiac sign from ecliptic longitude
             const eclipticLongitude = positions[0]?.eclipticLongitude || 0;
             const sign = getZodiacSign(eclipticLongitude);
-
-            // Estimate viewing conditions
             const viewing = estimateViewingConditions(meridianAltitude);
-
-            // Distance in AU
             const distanceAU = meridianDistance ? meridianDistance.toFixed(3) : 'N/A';
 
             celestialData.push({
@@ -205,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return sign;
             }
         }
-        return 'N/A'; // Fallback
+        return 'N/A';
     }
 
     // Placeholder function to estimate viewing conditions based on altitude
@@ -218,7 +329,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'Extremely difficult to see';
     }
 
-    // Fallback data
+    // Function to convert degrees to wind direction
+    function degreesToDirection(deg) {
+        const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+        const index = Math.round(deg / 22.5) % 16;
+        return directions[index];
+    }
+
+    // Fallback data for celestial objects
     function getFallbackData() {
         return [
             { planet: 'Mercury', rise: 'Fri 5:42 am', set: 'Fri 11:48 am', meridian: 'Fri 5:55 pm', sign: 'Pisces', viewing: 'Difficult to see', au: 1.004 },
@@ -231,7 +349,28 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
     }
 
-    // Function to display data in the table
+    // Function to display weather and Sun/Moon data
+    function displayWeatherAndSunMoonData(data) {
+        weatherSunMoonTable.innerHTML = '';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${data.temperature ? data.temperature + '°F' : 'N/A'}</td>
+            <td>${data.condition || 'N/A'}</td>
+            <td>${data.humidity ? data.humidity + '%' : 'N/A'}</td>
+            <td>${data.wind || 'N/A'}</td>
+            <td>${data.sunRise || 'N/A'}</td>
+            <td>${data.sunSet || 'N/A'}</td>
+            <td>${data.sunDistance ? data.sunDistance + ' mi' : 'N/A'}</td>
+            <td>${data.sunAltitude ? data.sunAltitude + '°' : 'N/A'}</td>
+            <td>${data.moonPhase || 'N/A'}</td>
+            <td>${data.moonRise || 'N/A'}</td>
+            <td>${data.moonDistance ? data.moonDistance + ' mi' : 'N/A'}</td>
+            <td>${data.fullNewMoon || 'N/A'}</td>
+        `;
+        weatherSunMoonTable.appendChild(row);
+    }
+
+    // Function to display celestial data
     function displayCelestialData(data) {
         celestialTable.innerHTML = '';
         if (!data || data.length === 0) {

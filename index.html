@@ -51,6 +51,38 @@
     <div class="container">
         <h1>Astronomy Dashboard</h1>
         <div id="location-info">Fetching your location...</div>
+        
+        <!-- New Weather and Sun/Moon Table -->
+        <h2>Weather and Sun/Moon Data</h2>
+        <table id="weather-sun-moon-table">
+            <thead>
+                <tr>
+                    <th colspan="4">Weather</th>
+                    <th colspan="4">Sun</th>
+                    <th colspan="4">Moon</th>
+                </tr>
+                <tr>
+                    <th>Temp</th>
+                    <th>Condition</th>
+                    <th>Humidity</th>
+                    <th>Wind</th>
+                    <th>Rise</th>
+                    <th>Set</th>
+                    <th>Distance</th>
+                    <th>Altitude</th>
+                    <th>Phase</th>
+                    <th>Rise</th>
+                    <th>Distance</th>
+                    <th>Full/New</th>
+                </tr>
+            </thead>
+            <tbody id="weather-sun-moon-data">
+                <!-- Data will be populated by JavaScript -->
+            </tbody>
+        </table>
+
+        <!-- Existing Celestial Objects Table -->
+        <h2>Meridian Positions of Celestial Objects</h2>
         <table id="celestial-table">
             <thead>
                 <tr>
