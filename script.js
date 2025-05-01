@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 (error) => {
                     locationInfo.textContent = 'Unable to fetch location. Using default data.';
-                    // Fallback to static data if location access is denied
                     displayCelestialData(getFallbackData());
                 }
             );
@@ -23,13 +22,105 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Function to fetch celestial data (placeholder for API call)
-    function fetchCelestialData(latitude, longitude) {
-        // Replace this with a real API call, e.g., using fetch()
-        // Example: fetch(`https://api.astronomyapi.com/data?lat=${latitude}&lon=${longitude}`)
-        // For now, we'll use the static data from the image as a fallback
-        const data = getFallbackData();
-        displayCelestialData(data);
+    // Function to fetch celestial data from timeanddate.com Astronomy API
+    async function fetchCelestialData(latitude, longitude) {
+        try {
+            const accessKey = 'YOUR_ACCESS_KEY'; // Replace with your timeanddate.com API key
+            const expires = Math.floor(Date.now() / 1000) + 3600; // Timestamp for 1 hour from now
+            const signature = 'YOUR_SIGNATURE'; // Replace with your computed signature (requires API secret)
+            const date = new Date().toISOString().split('T')[0]; // Current date in YYYY-MM-DD format
+
+            // API request for celestial events (rise, set, meridian) for planets
+            const url = `https://api.xmltime.com/astronomy?object=mercury,venus,mars,jupiter,saturn,uranus,neptune&coords=${latitude},${longitude}&startdt=${date}&enddt=${date}&types=rise,set,meridian&version=3&out=json&accesskey=${accessKey}&expires=${expires}&signature=${signature}`;
+
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error('API request failed');
+            }
+
+            const data = await response.json();
+            const celestialData = processApiData(data);
+            displayCelestialData(celestialData);
+        } catch (error) {
+            console.error('Error fetching celestial data:', error);
+            locationInfo.textContent = 'Failed to fetch data. Using default data.';
+            displayCelestialData(getFallbackData());
+        }
+    }
+
+    // Function to process API data into the required format
+    function processApiData(data) {
+        const celestialData = [];
+        const location = data.locations[0];
+        const objects = location.astronomy.objects;
+
+        objects.forEach(obj => {
+            const planetName = obj.name.charAt(0).toUpperCase() + obj.name.slice(1);
+            const days = obj.days[0]; // Data for the current date
+            const events = days.events;
+
+            // Extract rise, set, and meridian times
+            const riseEvent = events.find(e => e.type === 'rise');
+            const setEvent = events.find(e => e.type === 'set');
+            const meridianEvent = events.find(e => e.type === 'meridian');
+
+            // Format times
+            const riseTime = riseEvent ? `Fri ${formatTime(riseEvent.hour, riseEvent.min)}` : 'N/A';
+            const setTime = setEvent ? `Fri ${formatTime(setEvent.hour, setEvent.min)}` : 'N/A';
+            const meridianTime = meridianEvent ? `Fri ${formatTime(meridianEvent.hour, meridianEvent.min)}` : 'N/A';
+
+            // Placeholder for sign and viewing conditions (not directly provided by API)
+            const sign = getSignForPlanet(planetName); // You'll need to implement this or use another API
+            const viewing = estimateViewingConditions(meridianEvent?.altitude); // Estimate based on altitude
+
+            // Distance in AU (convert from km to AU, 1 AU = 149,597,870.7 km)
+            const distanceKm = meridianEvent?.distance || 0;
+            const distanceAU = (distanceKm / 149597870.7).toFixed(3);
+
+            celestialData.push({
+                planet: planetName,
+                rise: riseTime,
+                set: setTime,
+                meridian: meridianTime,
+                sign: sign,
+                viewing: viewing,
+                au: distanceAU
+            });
+        });
+
+        return celestialData;
+    }
+
+    // Helper function to format time as "H:MM am/pm"
+    function formatTime(hour, minute) {
+        const period = hour >= 12 ? 'pm' : 'am';
+        const adjustedHour = hour % 12 || 12;
+        return `${adjustedHour}:${minute.toString().padStart(2, '0')} ${period}`;
+    }
+
+    // Placeholder function to determine zodiac sign (not provided by API)
+    function getSignForPlanet(planet) {
+        // This is a placeholder. You may need another API or calculation for accurate zodiac signs.
+        const signs = {
+            Mercury: 'Pisces',
+            Venus: 'Pisces',
+            Mars: 'Cancer',
+            Jupiter: 'Taurus',
+            Saturn: 'Pisces',
+            Uranus: 'Taurus',
+            Neptune: 'Pisces'
+        };
+        return signs[planet] || 'N/A';
+    }
+
+    // Placeholder function to estimate viewing conditions based on altitude
+    function estimateViewingConditions(altitude) {
+        if (!altitude) return 'Unknown';
+        if (altitude > 60) return 'Perfect visibility';
+        if (altitude > 40) return 'Great visibility';
+        if (altitude > 20) return 'Average visibility';
+        if (altitude > 5) return 'Difficult to see';
+        return 'Extremely difficult to see';
     }
 
     // Fallback data (from the image you provided)
